@@ -8,9 +8,9 @@ import contextlib
 import copy
 import logging
 import os
+from pathlib import Path
 import typing as tp
 import warnings
-from pathlib import Path
 
 import exca
 import neuralset.events.etypes as ev
@@ -36,9 +36,7 @@ SPLIT_ATTRIBUTES = {
 }
 
 
-def assign_splits(
-    events: pd.DataFrame, splitter: tp.Callable[str, str]
-) -> pd.DataFrame:
+def assign_splits(events: pd.DataFrame, splitter: tp.Callable[str, str]) -> pd.DataFrame:
     assert events.study.nunique() == 1, "Only one study can be assigned at a time"
     study_name = events.study.unique()[0]
     split_by = SPLIT_ATTRIBUTES[study_name]
@@ -98,9 +96,7 @@ class ExtractWordsFromAudio(EventsTransform):
         import subprocess
         import tempfile
 
-        language_codes = dict(
-            english="en", french="fr", spanish="es", dutch="nl", chinese="zh"
-        )
+        language_codes = dict(english="en", french="fr", spanish="es", dutch="nl", chinese="zh")
         if language not in language_codes:
             raise ValueError(f"Language {language} not supported")
 
@@ -132,6 +128,11 @@ class ExtractWordsFromAudio(EventsTransform):
             ]
             cmd = [c for c in cmd if c]  # remove empty args
             env = {k: v for k, v in os.environ.items() if k != "MPLBACKEND"}
+            # Allow Python to search the current working directory when whisperx runs.
+            # This disables the Safe Path restriction (PYTHONSAFEPATH), which is
+            # blocking imports of standard library modules like `optparse` in the
+            # uv-managed environment.
+            env["PYTHONSAFEPATH"] = ""  # re-enable CWD on sys.path for this subprocess
             result = subprocess.run(cmd, capture_output=True, text=True, env=env)
             if result.returncode != 0:
                 raise RuntimeError(f"whisperx failed:\n{result.stderr}")
@@ -178,9 +179,7 @@ class ExtractWordsFromAudio(EventsTransform):
                     transcript = pd.DataFrame()
                     logger.warning(f"Empty transcript file {transcript_filename}")
             else:
-                transcript = self._get_transcript_from_audio(
-                    wav_filename, self.language
-                )
+                transcript = self._get_transcript_from_audio(wav_filename, self.language)
                 transcript.to_csv(transcript_filename, sep="\t", index=False)
                 logger.info(f"Wrote transcript to {transcript_filename}")
             transcripts[str(wav_filename)] = transcript
@@ -217,9 +216,7 @@ class CreateVideosFromImages(EventsTransform):
     remove_images: bool = True
     infra: exca.MapInfra = exca.MapInfra(cluster="processpool")
 
-    @infra.apply(
-        item_uid=lambda image_event: f"{image_event.filepath}_{image_event.duration}"
-    )
+    @infra.apply(item_uid=lambda image_event: f"{image_event.filepath}_{image_event.duration}")
     def create_video(self, image_events: list[ev.Image]) -> tp.Iterator[ev.Video]:
         for image_event in image_events:
             image_filepath = Path(image_event.filepath)
@@ -236,9 +233,7 @@ class CreateVideosFromImages(EventsTransform):
                 contextlib.redirect_stdout(devnull),
                 contextlib.redirect_stderr(devnull),
             ):
-                clip.write_videofile(
-                    video_filepath, codec="libx264", audio=False, fps=self.fps
-                )
+                clip.write_videofile(video_filepath, codec="libx264", audio=False, fps=self.fps)
             video_event = ev.Video.from_dict(
                 image_event.to_dict()
                 | {
@@ -252,13 +247,9 @@ class CreateVideosFromImages(EventsTransform):
     def _run(self, events: pd.DataFrame) -> pd.DataFrame:
         images = events.loc[events.type == "Image"]
         image_events = []
-        for image in tqdm(
-            images.itertuples(), total=len(images), desc="Extracting image events"
-        ):
+        for image in tqdm(images.itertuples(), total=len(images), desc="Extracting image events"):
             image_events.append(ev.Image.from_dict(image._asdict()))
-        video_events = [
-            video_event.to_dict() for video_event in self.create_video(image_events)
-        ]
+        video_events = [video_event.to_dict() for video_event in self.create_video(image_events)]
         events = pd.concat([events, pd.DataFrame(video_events)], ignore_index=True)
         if self.remove_images:
             events = events.loc[events.type != "Image"]
