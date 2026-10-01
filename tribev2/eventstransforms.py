@@ -110,7 +110,7 @@ class ExtractWordsFromAudio(EventsTransform):
         with tempfile.TemporaryDirectory() as output_dir:
             logger.info("Running whisperx via uvx...")
             cmd = [
-                "uvx",
+                #"uvx",
                 "whisperx",
                 str(wav_filename),
                 "--model",
